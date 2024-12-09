@@ -1,0 +1,243 @@
+# Load required libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+
+# Set plot theme (similar to plt.style.use('fivethirtyeight'))
+ggplot2::theme_set(theme_bw())  # Adjust theme as needed
+
+# Read the CSV file
+df <- read.csv("weather-Saudia-Arabia.csv")
+
+# Print the dimensions of the DataFrame
+dim(df)
+head(df)
+str(df)
+
+# Remove unnecessary columns
+df <- df[, !(names(df) %in% c("Unnamed: 0", "date", "time"))]
+
+# Replace spaces, "N/A", "NA", and empty strings with NA
+df[df == " "] <- NA
+df[df == "N/A"] <- NA
+df[df == "NA"] <- NA
+df[df == ""] <- NA
+
+
+# Remove '%' from 'humidity' column and convert to numeric
+df$humidity <- as.numeric(gsub("%", "", df$humidity))
+
+colSums(is.na(df))
+
+library(dplyr)
+library(tidyr)
+# Calculate mean humidity and barometer per city
+# Fill missing values in 'humidity' with mean per city
+# Fill missing values in 'barometer' with mean per city
+df <- df %>%
+  group_by(city) %>%
+  mutate(
+    mean_humidity = mean(humidity, na.rm = TRUE),
+    mean_barometer = mean(barometer, na.rm = TRUE)
+  ) %>%
+  fill(humidity, barometer, .direction = "down")
+
+
+colSums(is.na(df))
+
+
+summary(df)
+
+
+
+unique(df$weather)
+
+
+# Create a 'rain' column based on weather conditions
+df$rain <- grepl("rain|shower|thunderstorm|thundershowers", df$weather, ignore.case = TRUE)
+
+
+# Sample 20 unique weather conditions and their corresponding rain values
+df %>%
+  group_by(weather) %>%
+  summarize(rain = unique(rain)) %>%
+  sample_n(20)
+
+
+table(df$rain)
+
+
+# Remove the 'weather' column
+df <- df[, !(names(df) %in% c("weather"))]
+
+
+# Select numeric columns from columns temp to visibility 
+num_cols <- df %>% select(8:12) %>% select_if(is.numeric)
+
+# Create a list to store the plots
+plot_list <- list()
+
+# Loop over numeric columns and create plots
+for (col in names(num_cols)) 
+{
+  # Histogram
+  p1<- ggplot(num_cols, aes_string(x = col)) +
+    geom_histogram(binwidth = 0.5) +  # Adjust binwidth as needed
+    ggtitle(paste("Histogram of", col)) +
+    xlab(col) +
+    ylab("Frequency") +
+    theme_minimal() 
+    # print()
+
+  # Boxplot
+  p2<- ggplot(num_cols, aes_string(y = col)) +
+    geom_boxplot() +
+    ggtitle(paste("Boxplot of", col)) +
+    ylab(col) +
+    theme_minimal() 
+    
+    # Arrange plots side-by-side
+  plot_list[[length(plot_list) + 1]] <- grid.arrange(p1, p2, ncol = 2)
+  
+  
+}
+# Display all plots
+do.call(grid.arrange, c(plot_list, ncol = 1))
+
+
+
+
+# Find outliers 
+columns <- c("temp", "visibility")
+
+for (f in names(num_cols)) {
+  IQR <- quantile(num_cols[[f]], 0.75) - quantile(num_cols[[f]], 0.25)
+  lower_fence <- quantile(num_cols[[f]], 0.25) - (IQR * 1.5)
+  upper_fence <- quantile(num_cols[[f]], 0.75) + (IQR * 1.5)
+  print(paste0(f, " outliers are values < ", lower_fence, " or > ", upper_fence))
+}
+
+numeric_df <- df %>% select_if(is.numeric)
+numeric_df <- numeric_df[, -1]
+
+
+correlation_matrix <- cor(numeric_df)
+
+library(corrplot)
+
+# Create a correlation plot
+corrplot(correlation_matrix, method = "color")
+
+
+ # Convert the matrix to a long format for ggplot2
+ correlation_matrix_long <- reshape2::melt(correlation_matrix)
+ 
+# Create the heatmap
+ ggplot(correlation_matrix_long, aes(x = Var1, y = Var2, fill = value)) +
++   geom_tile() +
++   geom_text(aes(label = round(value, 2))) +
++   scale_fill_gradient2(low = "blue", high = "red", mid = 0) +
++   labs(title = "Correlation Heatmap of Rain in Saudi Arabia Dataset", x = "", y = "") +
++   theme_bw() +
++   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
++   theme(axis.text.y = element_text(angle = 30, hjust = 1))
+
+
+
+library(ggplot2)
+
+# Create the countplot
+ggplot(df, aes(x = rain)) +
+  geom_bar(stat = "count", color = "royalblue") +  # Adjust color as needed
+  labs(title = "Number of Rains in Saudi Arabia (2017-2019)", x = "Rain", y = "Count")     +theme_bw()
+
+
+
+
+city_rain_rate <- df %>%
+  group_by(city, year) %>%
+  summarize(total_rain = sum(rain))
+
+
+city_rain_rate <- city_rain_rate %>%
+  ungroup()
+
+
+
+library(ggplot2)
+# Ensure city is a factor
+city_rain_rate$city <- factor(city_rain_rate$city)
+
+# Create the bar plot
+ggplot(city_rain_rate, aes(x = city, y = total_rain, color = factor(year))) +
+  geom_bar(stat = "identity", position = position_dodge()) +  # Dodge bars for different years
+  labs(title = "Number of Rains in Saudi Arabia per City (2017-2019)", x = "City", y = "Rain Count") +
+  theme_dark() +  # Adjust theme as desired
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +  # Rotate x-axis labels
+  coord_flip()  # Flip y-axis for readability
+
+
+
+
+
+# Cap outliers in 'temp'
+df$temp <- ifelse(df$temp < -1.5, -1.5, df$temp)
+
+# Cap outliers in 'wind'
+df$wind <- ifelse(df$wind > 37, 37, df$wind)
+df$wind <- ifelse(df$wind < 0, 0, df$wind)
+
+# Cap outliers in 'visibility'
+df$visibility <- ifelse(df$visibility > 32.5, 32.5, df$visibility)
+df$visibility <- ifelse(df$visibility < 0, 0, df$visibility)
+
+# Cap outliers in 'barometer'
+df$barometer <- ifelse(df$barometer > 1036, 1036, df$barometer)
+df$barometer <- ifelse(df$barometer < 996, 996, df$barometer)
+
+
+
+
+summary(df)
+
+table(df$rain)
+
+
+library(caTools)
+
+# Set a seed for reproducibility
+set.seed(123)
+
+# Split the data into training and testing sets
+split <- sample.split(y, SplitRatio = 0.8)
+train_index <- split
+test_index <- !split
+
+# Create training and testing sets
+train_data <- df[train_index, ]
+test_data <- df[test_index, ]
+
+# Extract features and target variable
+X_train <- train_data[, -1]  # Assuming the first column is the target variable
+y_train <- train_data[, 1]
+X_test <- test_data[, -1]
+y_test <- test_data[, 1]
+
+
+# Install the required package (if not already installed)
+if (!require("glmnet")) install.packages("glmnet")
+library(glmnet)
+
+
+# Create the logistic regression model using glmnet
+model <- glmnet(X_train, y_train, family = "binomial", type.fit = "logistic")
+
+# Assuming 'model' is your trained logistic regression model
+y_pred_prob <- predict(model, newdata = X_test, type = "response")
+
+# Convert probabilities to binary predictions (e.g., using a threshold of 0.5)
+y_pred <- ifelse(y_pred_prob > 0.5, 1, 0)
+
+
+
